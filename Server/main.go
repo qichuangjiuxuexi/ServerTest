@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 )
 
 const saveFile = "saves/player_data.json"
@@ -91,6 +92,10 @@ func testSaveHandler(w http.ResponseWriter, r *http.Request) {
 
 	defaultData := `{"message": "This is a default value"}`
 	filePath := "saves/" + filename
+	// Ensure the "saves" directory exists
+	if _, err := os.Stat("saves"); os.IsNotExist(err) {
+		os.Mkdir("saves", 0755) // Create the directory if it doesn't exist
+	}
 	err := ioutil.WriteFile(filePath, []byte(defaultData), 0644)
 	if err != nil {
 		http.Error(w, "Failed to save data", http.StatusInternalServerError)
