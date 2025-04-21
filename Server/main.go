@@ -79,8 +79,8 @@ func main() {
 
 	http.HandleFunc("/testsave", testSaveHandler)
 
-	fmt.Println("Server listening on port 8082")
-	log.Fatal(http.ListenAndServe(":8082", nil))
+	fmt.Println("Server listening on port 80")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8082", nil))
 }
 
 func testSaveHandler(w http.ResponseWriter, r *http.Request) {
