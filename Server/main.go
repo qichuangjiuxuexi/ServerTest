@@ -20,7 +20,7 @@ func main() {
 	mux.HandleFunc("/player/login", handlers.HandleLogin)
 
 	// 启动服务器
-	addr := fmt.Sprintf("8.155.15.234:%d", cfg.Port)
+	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	log.Printf("Server starting on %s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
