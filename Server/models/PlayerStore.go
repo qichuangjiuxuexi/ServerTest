@@ -25,12 +25,12 @@ func GetPlayerStore() *PlayerStore {
 }
 
 // FindByUsername 通过用户名查找玩家
-func (s *PlayerStore) FindByUsername(username string) *Player {
+func (s *PlayerStore) FindByUserId(userId string) *Player {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
 	for _, p := range s.players {
-		if p.Username == username {
+		if p.ID == userId {
 			return p
 		}
 	}
@@ -42,7 +42,7 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	id := generateID()
+	id := deviceID
 	now := time.Now()
 
 	player := &Player{

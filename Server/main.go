@@ -17,7 +17,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 注册路由 - 只包含登录接口
-	mux.HandleFunc("/login", handlers.HandleLogin)
+	mux.HandleFunc("/player/login", handlers.HandleLogin)
 
 	// 启动服务器
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 )
@@ -43,4 +44,5 @@ func SendError(w http.ResponseWriter, r *http.Request, errorCode int, message st
 
 	respBytes, _ := json.Marshal(resp)
 	w.Write(respBytes)
+	log.Printf("error", errorCode, message)
 }
