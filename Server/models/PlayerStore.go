@@ -59,7 +59,6 @@ func (s *PlayerStore) FindByUserId(userId string) *Player {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	// 检查文件是否存在，不存在则创建
 	if err := tools.EnsureFileExists(s.playerListPath); err != nil {
 		fmt.Printf("查找用户前检查文件失败: %v\n", err)
 		return nil
@@ -117,6 +116,34 @@ func (s *PlayerStore) FindByUserId(userId string) *Player {
 	return nil
 }
 
+func (s *PlayerStore) GetPlayerCount() int {
+	if err := tools.EnsureFileExists(s.playerListPath); err != nil {
+		fmt.Printf("查找用户前检查文件失败: %v\n", err)
+		return 0
+	}
+
+	// 打开 PlayerList.txt 文件
+	file, err := os.OpenFile(s.playerListPath, os.O_RDONLY, 0644)
+	if err != nil {
+		fmt.Printf("打开 PlayerList.txt 文件失败: %v\n", err)
+		return 0
+	}
+	defer file.Close()
+
+	// 读取文件内容
+	scanner := bufio.NewScanner(file)
+	var count = 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			break // 跳过空行
+		} else {
+			count++
+		}
+	}
+	return count
+}
+
 // Create 创建新玩家
 func (s *PlayerStore) Create(username, deviceID string) *Player {
 	s.mutex.Lock()
@@ -141,7 +168,7 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 		return nil
 	}
 
-	id := deviceID
+	var id = fmt.Sprintf("%d", 100000+s.GetPlayerCount())
 	now := time.Now()
 
 	// 打开 PlayerList.txt 文件（如果不存在则创建）
@@ -192,7 +219,7 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 	if !exists {
 		player = &Player{
 			ID:          id,
-			Username:    username,
+			Username:    "Player" + id,
 			DeviceID:    deviceID,
 			CreatedAt:   now,
 			LastLoginAt: now,
