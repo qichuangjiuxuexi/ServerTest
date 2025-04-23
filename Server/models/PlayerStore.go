@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"Server/tools"
 	"bufio"
 	"fmt"
@@ -22,18 +23,18 @@ type PlayerStore struct {
 var store *PlayerStore
 var once sync.Once
 
-// GetPlayerStore 获取玩家存储的单例实例
+// GetPlayerStore 获取玩家存储的单例实�?
 func GetPlayerStore() *PlayerStore {
 	once.Do(func() {
 		var err error
 
 		parentDir := tools.GetSqlPath()
 
-		// 在父目录中设置Sql文件夹路径
+		// 在父目录中设置Sql文件夹路�?
 		sqlDirPath := filepath.Join(parentDir, "Sql")
 		playerListPath := filepath.Join(sqlDirPath, "PlayerList.txt")
 
-		// 确保Sql文件夹存在
+		// 确保Sql文件夹存�?
 		if err = tools.EnsureDirectoryExists(sqlDirPath); err != nil {
 			panic(fmt.Errorf("确保SQL目录存在失败: %w", err))
 		}
@@ -43,7 +44,7 @@ func GetPlayerStore() *PlayerStore {
 			panic(fmt.Errorf("确保PlayerList.txt文件存在失败: %w", err))
 		}
 
-		fmt.Printf("初始化PlayerStore成功，SQL目录：%s，玩家列表文件：%s\n", sqlDirPath, playerListPath)
+		fmt.Printf("初始化PlayerStore成功，SQL目录�?%s，玩家列表文件：%s\n", sqlDirPath, playerListPath)
 
 		store = &PlayerStore{
 			players:        make(map[string]*Player),
@@ -152,7 +153,17 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 	// 首先检查玩家是否已存在
 	for _, player := range s.players {
 		if player.DeviceID == deviceID {
-			fmt.Printf("设备ID %s 的玩家已存在，ID: %s\n", deviceID, player.ID)
+			// 更新现有玩家的登录时间
+			player.LastLoginAt = time.Now()
+			fmt.Printf("设备ID %s 的玩家已存在，ID: %s, 更新登录时间\n", deviceID, player.ID)
+
+			// 更新文件中的 lastLoginAt
+			if err := s.updatePlayerInFile(player.ID, player.LastLoginAt); err != nil {
+				fmt.Printf("更新文件中的玩家数据失败: %v\n", err)
+				return nil
+			}
+
+			// 返回玩家信息，包含 CreatedAt 和 LastLoginAt
 			return player
 		}
 	}
@@ -179,8 +190,7 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 	}
 	defer file.Close()
 
-	// 写入玩家信息前先检查文件中是否已存在该玩家
-	// 重新打开文件用于读取
+	// 重新打开文件用于读取并检查玩家是否存在
 	checkFile, err := os.OpenFile(s.playerListPath, os.O_RDONLY, 0644)
 	if err != nil {
 		fmt.Printf("检查玩家是否存在时打开文件失败: %v\n", err)
@@ -194,8 +204,15 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 		if line == "" {
 			continue
 		}
-		parts := strings.Split(line, ",")
-		if len(parts) >= 2 && (parts[0] == id || parts[1] == deviceID) {
+		// 解析每行JSON格式的数据
+		var playerInfo map[string]string
+		if err := json.Unmarshal([]byte(line), &playerInfo); err != nil {
+			fmt.Printf("解析玩家信息失败: %v\n", err)
+			continue
+		}
+
+		// 检查是否已经存在相同的ID或deviceID
+		if playerInfo["user"] == id || playerInfo["password"] == deviceID {
 			playerExists = true
 			break
 		}
@@ -203,8 +220,21 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 	checkFile.Close()
 
 	if !playerExists {
-		// 写入玩家信息
-		_, err = file.WriteString(fmt.Sprintf("%s,%s\n", id, deviceID))
+		// 写入新的玩家信息为JSON格式
+		playerInfo := map[string]string{
+			"user":        id,
+			"password":    deviceID,
+			"createdAt":   now.Format(time.RFC3339), // 格式化为ISO8601格式
+			"lastLoginAt": now.Format(time.RFC3339),
+		}
+
+		playerInfoJSON, err := json.Marshal(playerInfo)
+		if err != nil {
+			fmt.Printf("将玩家信息转换为JSON失败: %v\n", err)
+			return nil
+		}
+
+		_, err = file.WriteString(string(playerInfoJSON) + "\n")
 		if err != nil {
 			fmt.Printf("写入玩家信息失败: %v\n", err)
 			return nil
@@ -214,9 +244,10 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 		fmt.Println("玩家在文件中已存在，跳过写入")
 	}
 
-	// 创建或获取玩家对象
+	// 获取玩家对象
 	player, exists := s.players[id]
 	if !exists {
+		// 创建玩家对象用于返回数据
 		player = &Player{
 			ID:          id,
 			Username:    "Player" + id,
@@ -227,12 +258,77 @@ func (s *PlayerStore) Create(username, deviceID string) *Player {
 		s.players[id] = player
 		fmt.Printf("创建新玩家: ID=%s, Username=%s\n", id, username)
 	} else {
+		// 更新现有玩家的登录时间
 		player.LastLoginAt = now
 		fmt.Printf("更新现有玩家登录时间: ID=%s\n", id)
 	}
 
+	// 返回玩家信息，包括 CreatedAt 和 LastLoginAt
 	return player
 }
+
+// 辅助方法：更新指定玩家的 lastLoginAt 字段
+func (s *PlayerStore) updatePlayerInFile(playerID string, lastLoginAt time.Time) error {
+	// 创建临时文件
+	tempFilePath := s.playerListPath + ".temp"
+	tempFile, err := os.OpenFile(tempFilePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("打开临时文件失败: %v", err)
+	}
+	defer tempFile.Close()
+
+	// 打开原文件读取内容
+	file, err := os.OpenFile(s.playerListPath, os.O_RDONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("打开原文件失败: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		// 解析每行JSON格式的数据
+		var playerInfo map[string]string
+		if err := json.Unmarshal([]byte(line), &playerInfo); err != nil {
+			return fmt.Errorf("解析玩家信息失败: %v", err)
+		}
+
+		// 如果玩家ID匹配，更新 lastLoginAt
+		if playerInfo["user"] == playerID {
+			playerInfo["lastLoginAt"] = lastLoginAt.Format(time.RFC3339)
+		}
+
+		// 写入修改后的玩家信息到临时文件
+		playerInfoJSON, err := json.Marshal(playerInfo)
+		if err != nil {
+			return fmt.Errorf("将玩家信息转换为JSON失败: %v", err)
+		}
+
+		_, err = tempFile.WriteString(string(playerInfoJSON) + "\n")
+		if err != nil {
+			return fmt.Errorf("写入临时文件失败: %v", err)
+		}
+	}
+
+	// 检查文件是否读取完毕
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("扫描文件错误: %v", err)
+	}
+
+	// 替换原文件为临时文件
+	if err := os.Rename(tempFilePath, s.playerListPath); err != nil {
+		return fmt.Errorf("替换文件失败: %v", err)
+	}
+
+	return nil
+}
+
+
+
 
 // UpdateLastLogin 更新玩家最后登录时间
 func (s *PlayerStore) UpdateLastLogin(id string) bool {
